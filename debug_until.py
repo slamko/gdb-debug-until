@@ -2,9 +2,11 @@ from enum import Enum
 
 cmd = ''
 exp = ''
+start_point = None
 
 def get_arg_value(args):
     return args.split('=')[1]
+
 
 class DB_STATUS(Enum):
     COMPLETED = 0
@@ -16,12 +18,29 @@ class EX_CODE(Enum):
     FAIL = 1
 
 
-def run(cmd, exp):
-	gdb.write(cmd)
-	res = gdb.execute(cmd, from_tty=False, to_string=True)
-	if exp in res:
-		gdb.write('success!')
+def finish_debug():
+	gdb.events.stop.disconnect(check_st)
+	gdb.events.exited.disconnect(check_st)
+	global start_point
+	start_point.delete()
+	gdb.execute("shell rm log.txt")
+
+
+def run():
+	global cmd 
+	global exp
+	shell_cmd = '{0} > log.txt 2>&1'.format(cmd)
+	gdb.execute(shell_cmd, from_tty=True, to_string=True)
+	res = open("log.txt").read()
+
+	if exp == res or res.startswith(exp):
+		gdb.write(' \n')
+		gdb.write('-------------------\n')
+		gdb.write('Event triggered!\n')
+		gdb.write('-------------------\n')
+		gdb.write(' \n')
 		gdb.execute('continue')
+		finish_debug()
 	else:
 		gdb.execute('next')
 
@@ -30,12 +49,11 @@ def check_st(event):
 		global cmd
 		global exp
 		if hasattr (event, 'breakpoints'):
-			run(cmd, exp)
-		elif hasattr (event, 'exit_code'):
-			gdb.events.stop.disconnect(check_st)
-			gdb.events.exited.disconnect(check_st)
+			run()
+		elif hasattr (event, 'inferior'):
+			finish_debug()
 		else:
-			run(cmd, exp)
+			run()
 	
 
 def start_debug(args):
@@ -46,6 +64,7 @@ def start_debug(args):
 		exp = get_arg_value(args[3])
 		gdb.events.stop.connect(check_st)
 		gdb.events.exited.connect(check_st)
+
 
 class DebugUntil (gdb.Command):
 	"""Debug through the function until the passed condition would be met"""
@@ -59,8 +78,8 @@ class DebugUntil (gdb.Command):
 			return
 
 		args = gdb.string_to_argv(arg)
-		start_p = args[0]
-		gdb.execute('b {0}'.format(start_p))
+		global start_point
+		start_point = gdb.Breakpoint(args[0])
 			
 		start_debug(args)
 		

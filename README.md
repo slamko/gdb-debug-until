@@ -2,4 +2,6 @@
 
 ### Usage: 
 
+```
 debug-until [<starting breakpoint>] --args=[<inferior args>] --cmp=[<shell command>] --exp=[<expected output>]
+```

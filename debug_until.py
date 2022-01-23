@@ -16,7 +16,11 @@ LS_ERR = 'ls: cannot access'
 
 
 def get_arg_value(args):
-    return args.split('=')[1]
+	arr = args.split('=')
+	if len(arr) == 2:
+		return arr[1]
+	else:
+		return None
 
 
 class DB_STATUS(Enum):
@@ -44,6 +48,19 @@ def report_debug_failure():
 	gdb.write('\n----------------\n')
 	gdb.write('Passed condition wasn`t met. Try setting defferent parameters\n')
 	gdb.write('----------------\n \n')
+
+
+def print_usage():
+	gdb.write('\nDebug through the code until the passed event will be triggered.\n\n')
+	gdb.write('Usage:\n')
+	gdb.write('debug-until [<starting breakpoint>] [--args=<inferior args>] [[--cmp=<shell command> --exp=<expected output>]\n')
+	gdb.write('                                                              [--file-created=<file>]\n')
+	gdb.write('                                                              [--file-deleted=<file>]\n\n')
+	gdb.write('[starting break point] - should be passed in the format that is accepted by GDB (e.g. <filename>:<line> or <function name>).\n')
+	gdb.write('[inferior args] - arguments for GDB`s run command required run debugged program.\n')
+	gdb.write('[shell command] - the shell command that will be executed after each line of code.\n')
+	gdb.write('The output of the <shell command> will be compared with <expected output> and in case is they are equal debug-until will report about triggering of an event.\n')
+
 
 
 def run_shell_command():
@@ -108,6 +125,11 @@ def event_subscribe():
 def start_debug(args):
 	global cmd 
 	global exp
+	if len(args) < 3:
+		gdb.write('Some parameters aren`t specified.\n')
+		print_usage()
+		return DB_STATUS.COMPLETED
+
 	if '--cmp' in args[2] and '--exp' in args[3]:
 		cmd = get_arg_value(args[2])
 		exp = get_arg_value(args[3])
@@ -143,6 +165,10 @@ def start_debug(args):
 		
 		event_subscribe()
 		return DB_STATUS.RUNNING
+	else:
+		gdb.write('Some parameters aren`t specified.\n')
+		print_usage()
+		return DB_STATUS.COMPLETED
 
 
 class DebugUntil (gdb.Command):
@@ -153,7 +179,8 @@ class DebugUntil (gdb.Command):
 
 
 	def invoke(self, arg, from_tty):
-		if not  arg:
+		if not arg or '--help' in arg:
+			print_usage()
 			return
 
 		args = gdb.string_to_argv(arg)
@@ -169,6 +196,10 @@ class DebugUntil (gdb.Command):
 			gdb.execute(RUN)
 		else:
 			p_args = get_arg_value(args[1])
+			if not p_args:
+				gdb.write('error: "--args" parameter wasn`t assinged.\n')
+				finish_debug()
+				return
 			gdb.execute(RUN + ' ' + p_args)
 
 DebugUntil()

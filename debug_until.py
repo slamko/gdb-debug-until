@@ -12,6 +12,7 @@ CMD = 'debug-until'
 NEXT = 'next'
 CONTINUE = 'continue'
 RUN = 'run'
+LS_ERR = 'ls: cannot access'
 
 
 def get_arg_value(args):
@@ -61,7 +62,7 @@ def finish_debug():
 	gdb.events.exited.disconnect(handler)
 	global start_point
 	start_point.delete()
-	gdb.execute('shell rm {0}'.format(LOG_FILE))
+	gdb.execute('shell rm ' + LOG_FILE)
 
 
 def check_trig_event():
@@ -75,7 +76,6 @@ def check_trig_event():
 
 
 def run():
-	global cmd 
 	res = run_shell_command()
 
 	if cmp_output(res):
@@ -88,7 +88,6 @@ def check_st(event):
 		if hasattr (event, 'breakpoints'):
 			run()
 		elif hasattr (event, 'inferior'):
-			global cmd 
 			res = run_shell_command()
 
 			if cmp_output(res):
@@ -101,21 +100,48 @@ def check_st(event):
 	
 handler = check_st
 
-def start_debug(args):
-	if '--cmp' in args[2] and '--exp' in args[3]:
-		global cmd 
-		cmd = get_arg_value(args[2])
-		global exp 
-		exp = get_arg_value(args[3])
+def event_subscribe():
+	global handler
+	gdb.events.stop.connect(handler)
+	gdb.events.exited.connect(handler)
 
+def start_debug(args):
+	global cmd 
+	global exp
+	if '--cmp' in args[2] and '--exp' in args[3]:
+		cmd = get_arg_value(args[2])
+		exp = get_arg_value(args[3])
 		res = run_shell_command()
+
 		if cmp_output(res):
 			condition_satisfied()
 			return DB_STATUS.COMPLETED
 		
-		global handler
-		gdb.events.stop.connect(handler)
-		gdb.events.exited.connect(handler)
+		event_subscribe()
+		return DB_STATUS.RUNNING
+	elif '--file-created' in args[2]:
+		target_file = get_arg_value(args[2])
+		cmd = 'shell ls ' + target_file
+		exp = target_file
+		res = run_shell_command()
+
+		if cmp_output(res):
+			condition_satisfied()
+			return DB_STATUS.COMPLETED
+		
+		event_subscribe()
+		return DB_STATUS.RUNNING
+	elif '--file-deleted' in args[2]:
+		target_file = get_arg_value(args[2])
+		cmd = 'shell ls ' + target_file
+		exp = LS_ERR
+		res = run_shell_command()
+
+		if cmp_output(res):
+			condition_satisfied()
+			return DB_STATUS.COMPLETED
+		
+		event_subscribe()
 		return DB_STATUS.RUNNING
 
 
@@ -131,17 +157,18 @@ class DebugUntil (gdb.Command):
 			return
 
 		args = gdb.string_to_argv(arg)
-		global start_point
-		start_point = gdb.Breakpoint(args[0])
 
 		db_st = start_debug(args)
 		if db_st == DB_STATUS.COMPLETED:
 			return
 		
+		global start_point
+		start_point = gdb.Breakpoint(args[0])
+
 		if '--args' not in arg:
 			gdb.execute(RUN)
 		else:
 			p_args = get_arg_value(args[1])
-			gdb.execute('{0} {1}'.format(RUN, p_args))
+			gdb.execute(RUN + ' ' + p_args)
 
 DebugUntil()

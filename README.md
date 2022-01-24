@@ -33,4 +33,6 @@ debug-until [<starting breakpoint>] [--args=<inferior args>] [[--cmp=<shell comm
 ***[starting break point]*** - should be passed in the format that is accepted by GDB (e.g. ```<filename>:<line>``` or ```<function name>```).  
 ***[inferior args]*** - arguments for GDB's ```run``` command required run debugged program.  
 ***[shell command]*** - the shell command that will be executed after each line of code.  
-The output of the shell command will be compared with *expected output* and in case is they are equal ```debug-until``` will report about triggering of an event. 
+The output of the shell command will be compared with *expected output* and in case if they are equal ```debug-until``` will report about triggering of an event. 
+
+##### * run ```debug-until --help``` to get usage info in the terminal.

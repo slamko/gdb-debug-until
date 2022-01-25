@@ -38,8 +38,8 @@ def get_arg_value(args, key):
 
 
 class DB_STATUS(Enum):
-    COMPLETED = 0
-    RUNNING = 1
+	COMPLETED = 0
+	RUNNING = 1
 
 
 def cmp_output(res):
@@ -105,7 +105,8 @@ def finish_debug(error_msg=None):
 
 	if os.path.isfile(LOG_FILE):
 		gdb.execute('shell rm ' + LOG_FILE)
-
+		
+	gdb.execute('set pagination on')
 	subscribed = 0
 	triggered = 0
 	cmd = ''
@@ -206,7 +207,8 @@ class DebugUntil (gdb.Command):
 		if not arg or HELP in arg:
 			print_usage()
 			return
-
+				
+		gdb.execute('set pagination off')
 		args = gdb.string_to_argv(arg)
 
 		db_st = start_debug(args)

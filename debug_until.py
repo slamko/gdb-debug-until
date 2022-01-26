@@ -8,6 +8,8 @@ exp = ''
 start_point = None
 triggered = 0
 subscribed = 0
+rec = 1
+iter = 0
 
 LOG_FILE = 'log.txt'
 CMD = 'debug-until'
@@ -87,12 +89,14 @@ def condition_satisfied():
 	gdb.write('\nCondition is already satisfied\n')
 
 
-def finish_debug(error_msg=None):
+def dispose():
 	global subscribed
 	global triggered
 	global cmd
 	global exp
 	global start_point
+	global rec
+	global iter
 
 	if subscribed:
 		global handler
@@ -109,9 +113,15 @@ def finish_debug(error_msg=None):
 	gdb.execute('set pagination on')
 	subscribed = 0
 	triggered = 0
+	rec = 1
+	iter = 0
 	cmd = ''
 	exp = ''
 	start_point = None
+
+
+def finish_debug(error_msg=None):
+	dispose()
 	die(error_msg)
 
 
@@ -140,9 +150,11 @@ def check_st(event):
 		elif hasattr (event, 'inferior'):
 			res = run_shell_command()
 
+			global iter
+			global rec
 			if cmp_output(res):
 				check_trig_event()
-			else:
+			elif rec <= iter + 1:
 				report_debug_failure()
 				finish_debug()
 		else:
@@ -173,20 +185,20 @@ def start_debug(args):
 	args_len = len(args) 
 
 	if CMP in args[args_len - 2] and EXP in args[args_len - 1]:
-		cmd = get_arg_value(args[2], CMP)
-		exp = get_arg_value(args[3], EXP)
+		cmd = get_arg_value(args[args_len - 2], CMP)
+		exp = get_arg_value(args[args_len - 1], EXP)
 		res = run_shell_command()
 
 		return check_if_true_on_start(res)
 	elif FILE_CREATED in args[args_len - 1]:
-		target_file = get_arg_value(args[2], FILE_CREATED)
+		target_file = get_arg_value(args[args_len - 1], FILE_CREATED)
 		cmd = 'shell ls ' + target_file
 		exp = target_file
 		res = run_shell_command()
 
 		return check_if_true_on_start(res)
 	elif FILE_DELETED in args[args_len - 1]:
-		target_file = get_arg_value(args[2], FILE_DELETED)
+		target_file = get_arg_value(args[args_len - 1], FILE_DELETED)
 		cmd = 'shell ls ' + target_file
 		exp = LS_ERR
 		res = run_shell_command()
@@ -204,24 +216,44 @@ class DebugUntil (gdb.Command):
 
 
 	def invoke(self, arg, from_tty):
-		if not arg or HELP in arg:
+		if not arg:
 			print_usage()
 			return
 				
 		gdb.execute('set pagination off')
 		args = gdb.string_to_argv(arg)
 
-		db_st = start_debug(args)
-		if db_st == DB_STATUS.COMPLETED:
+		if HELP in args[0]:
+			print_usage()
 			return
+
+		if start_debug(args) == DB_STATUS.COMPLETED:
+			return
+
+		global rec
+		if '-r' in args[2]:
+			rec = int(get_arg_value(args[2], '-r'))
 		
 		global start_point
 		start_point = gdb.Breakpoint(args[0])
 
+		global triggered
+		global iter
 		if ARGS not in arg:
-			gdb.execute(RUN)
+			for it in range(0, rec):
+				if triggered:
+					break
+				if it != rec:
+					iter = it
+					gdb.execute(RUN)
 		else:
 			p_args = get_arg_value(args[1], ARGS)
-			gdb.execute(RUN + ' ' + p_args)
+			for it in range(0, rec):
+				
+				if triggered:
+					break
+				if it != rec:
+					iter = it
+					gdb.execute(RUN + ' ' + p_args)
 
 DebugUntil()

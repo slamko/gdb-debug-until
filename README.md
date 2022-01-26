@@ -25,9 +25,10 @@ specifying the correct path to the python script.
 ## Usage: 
 
 ```
-debug-until [<starting breakpoint>] [--args=<inferior args>] [[--cmp=<shell command> --exp=<expected output>]
-                                                              [--file-created=<file>]
-                                                              [--file-deleted=<file>]]
+debug-until [<starting breakpoint>] [--args=<inferior args>] [-r=<number of times program should be executed>] 
+                [[--cmp=<shell command> --exp=<expected output>]
+                 [--file-created=<file>]
+                 [--file-deleted=<file>]]
 ```
 
 ***[starting break point]*** - should be passed in the format that is accepted by GDB (e.g. ```<filename>:<line>``` or ```<function name>```).  

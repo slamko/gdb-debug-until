@@ -48,9 +48,17 @@ def cmp_output(res):
 	global exp
 	return exp == res or res.startswith(exp)
 
+
+def cmp_var(res):
+	res_val = res.split('=')[1]
+	global exp
+	return exp in res_val
+
+
 def die(error):
 	if error:
 		raise gdb.GdbError('error: ' + error)
+
 
 def event_triggered():
 	gdb.write('\n--------------\n')
@@ -80,13 +88,21 @@ def print_usage():
 
 
 def run_shell_command():
-	shell_cmd = '{0} > {1} 2>&1'.format(cmd, LOG_FILE)
-	gdb.execute(shell_cmd, from_tty=True, to_string=True)
-	return open(LOG_FILE).read()
-
+	if cmd.startswith('shell'):
+		shell_cmd = '{0} > {1} 2>&1'.format(cmd, LOG_FILE)
+		gdb.execute(shell_cmd, from_tty=True, to_string=True)
+		return open(LOG_FILE).read()
+	else:
+		return gdb.execute(cmd, from_tty=True, to_string=True)
+	
 
 def condition_satisfied():
 	gdb.write('\nCondition is already satisfied\n')
+
+
+def get_triggered():
+	global triggered
+	return triggered
 
 
 def dispose():
@@ -97,6 +113,7 @@ def dispose():
 	global start_point
 	global rec
 	global iter
+	global comparer
 
 	if subscribed:
 		global handler
@@ -118,6 +135,7 @@ def dispose():
 	cmd = ''
 	exp = ''
 	start_point = None
+	comparer = cmp_output
 
 
 def finish_debug(error_msg=None):
@@ -137,8 +155,7 @@ def check_trig_event():
 
 def run():
 	res = run_shell_command()
-
-	if cmp_output(res):
+	if comparer(res):
 		check_trig_event()
 	else:
 		gdb.execute(NEXT)
@@ -148,21 +165,24 @@ def check_st(event):
 		if hasattr (event, 'breakpoints'):
 			run()
 		elif hasattr (event, 'inferior'):
-			res = run_shell_command()
+			if not triggered:
+				res = run_shell_command()
 
-			global iter
-			global rec
-			if cmp_output(res):
-				check_trig_event()
-			elif rec <= iter + 1:
-				report_debug_failure()
+				global iter
+				global rec
+				if comparer(res):
+					check_trig_event()
+				elif rec <= iter + 1:
+					report_debug_failure()
+					finish_debug()
+			else:
 				finish_debug()
 		else:
 			run()
 
 
 def check_if_true_on_start(res):
-	if cmp_output(res):
+	if comparer(res):
 			condition_satisfied()
 			return DB_STATUS.COMPLETED
 		
@@ -170,6 +190,8 @@ def check_if_true_on_start(res):
 	return DB_STATUS.RUNNING
 	
 handler = check_st
+
+comparer = cmp_output
 
 def event_subscribe():
 	global handler
@@ -182,11 +204,14 @@ def event_subscribe():
 def start_debug(args):
 	global cmd 
 	global exp
+	global comparer
 	args_len = len(args) 
 
 	if CMP in args[args_len - 2] and EXP in args[args_len - 1]:
 		cmd = get_arg_value(args[args_len - 2], CMP)
+		gdb.write(cmd)
 		exp = get_arg_value(args[args_len - 1], EXP)
+		gdb.write(exp)
 		res = run_shell_command()
 
 		return check_if_true_on_start(res)
@@ -204,6 +229,15 @@ def start_debug(args):
 		res = run_shell_command()
 
 		return check_if_true_on_start(res)
+	elif '--var-eq' in args[args_len - 1]:
+		arg = get_arg_value(args[args_len - 1], '--var-eq')
+		var = arg.split(':')[0]
+		val = arg.split(':')[1]
+		cmd = 'print ' + var
+		exp = val
+		comparer = cmp_var
+
+		return check_if_true_on_start(' = ')
 	else:
 		gdb.write('error: Some parameters aren`t specified.\n')
 		print_usage()
@@ -237,11 +271,10 @@ class DebugUntil (gdb.Command):
 		global start_point
 		start_point = gdb.Breakpoint(args[0])
 
-		global triggered
 		global iter
 		if ARGS not in arg:
 			for it in range(0, rec):
-				if triggered:
+				if get_triggered():
 					break
 				if it != rec:
 					iter = it
@@ -250,10 +283,11 @@ class DebugUntil (gdb.Command):
 			p_args = get_arg_value(args[1], ARGS)
 			for it in range(0, rec):
 				
-				if triggered:
+				if get_triggered():
 					break
 				if it != rec:
 					iter = it
 					gdb.execute(RUN + ' ' + p_args)
+		finish_debug()
 
 DebugUntil()

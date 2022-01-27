@@ -28,7 +28,8 @@ specifying the correct path to the python script.
 debug-until [<starting breakpoint>] [--args=<inferior args>] [-r=<number of times program should be executed>] 
                 [[--cmp=<shell command> --exp=<expected output>]
                  [--file-created=<file>]
-                 [--file-deleted=<file>]]
+                 [--file-deleted=<file>]
+                 [--var-eq=<variable>:<expected value>]]
 ```
 
 ***[starting break point]*** - should be passed in the format that is accepted by GDB (e.g. ```<filename>:<line>``` or ```<function name>```).  
@@ -37,3 +38,13 @@ debug-until [<starting breakpoint>] [--args=<inferior args>] [-r=<number of time
 The output of the shell command will be compared with *expected output* and in case if they are equal ```debug-until``` will report about triggering of an event. 
 
 ##### * run ```debug-until --help``` to get usage info in the terminal.
+
+## Example:
+
+if you want to catch the moment when some variable in your code will have a specific value, you can simply run:
+```
+debug-until main --args="" --var-eq="my_var:10"
+```
+inside GDB.
+
+So, the command above will create a breakpoint in 'main' function, run the inferior program without arguments and wait until the variable, called 'my_var', will contain value 10. 'Debug-until' will iterate through each line of your code and report to you, when the condition will return true. 

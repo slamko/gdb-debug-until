@@ -1,4 +1,3 @@
-from urllib.parse import non_hierarchical
 import gdb
 import os
 from enum import Enum
@@ -7,12 +6,12 @@ cmd = ''
 exp = ''
 start_point = None
 triggered = 0
+break_hit = 0
 subscribed = 0
 runable_after_exit = 1
 rec = 1
 iter = 0
 arg_dict = {}
-log_file = None
 
 LOG_FILE = 'log.txt'
 CMD = 'debug-until'
@@ -68,9 +67,9 @@ def cmp_command_output(res):
 
 
 def cmp_var(res):
-	res_val = res.split('=')[1]
+	res_val = res.split('=')[1].strip().strip()
 	global exp
-	return exp in res_val
+	return exp == res_val
 
 
 def die(error):
@@ -79,7 +78,7 @@ def die(error):
 
 
 def event_triggered():
-	gdb.write('\n--------------\n')
+	gdb.write('\n----------------\n')
 	gdb.write('Event triggered!\n')
 	gdb.write('----------------\n \n')
 
@@ -89,21 +88,24 @@ def report_debug_failure():
 	gdb.write('Passed condition wasn`t met. Try setting different parameters\n')
 	gdb.write('-------------------------------------------------------------\n \n')
 
-
 def print_usage():
-	gdb.write('\Decription:\n')
-	gdb.write('\nDebug through the code until the passed event will be triggered.\n\n')
 	gdb.write('Usage:\n')
 	gdb.write('debug-until [<starting breakpoint>] [--args=<inferior args>] [[--cmp=<shell command> --exp=<expected output>]\n')
 	gdb.write('                                                              [--file-created=<file>]\n')
 	gdb.write('                                                              [--file-deleted=<file>]\n\n')
-	gdb.write('[starting break point] - should be passed in the format that is accepted by GDB \
-		(e.g. <filename>:<line> or <function name>).\n')
+	gdb.write('[starting break point] - should be passed in the format that is accepted by GDB\
+(e.g. <filename>:<line> or <function name>).\n')
 	gdb.write('[inferior args] - arguments for GDB`s run command required run debugged program.\n')
 	gdb.write('[shell command] - the shell command that will be executed after each line of code.\n')
-	gdb.write('The output of the <shell command> will be compared with <expected output> \
-		and in case is they are equal debug-until will report about triggering of an event.\n')
+	gdb.write('The output of the <shell command> will be compared with <expected output>\
+and in case if they are equal debug-until will report about triggering of an event.\n')
+	gdb.write('\nGet more info on https://github.com/Viaceslavus/gdb-debug-until\n')
 
+
+def print_full_info():
+	gdb.write('\Decription:\n')
+	gdb.write('\nDebug through the code until the passed event will be triggered.\n\n')
+	print_usage()
 
 def run_shell_command():
 	try:
@@ -137,7 +139,7 @@ def dispose():
 	global comparer
 	global arg_dict
 	global runable_after_exit
-	global log_file 
+	global break_hit
 
 	if subscribed:
 		global handler
@@ -156,11 +158,11 @@ def dispose():
 	triggered = 0
 	rec = 1
 	iter = 0
+	break_hit = 0
 	runable_after_exit = 1
 	cmd = ''
 	exp = ''
 	start_point = None
-	log_file = None
 	arg_dict = {}
 	comparer = cmp_command_output
 
@@ -177,7 +179,6 @@ def check_trig_event():
 		triggered = 1
 		gdb.execute(NEXT)
 		gdb.execute(CONTINUE)
-		finish_debug()
 
 
 def run():
@@ -189,27 +190,32 @@ def run():
 
 
 def check_st(event):
+		global break_hit
 		if hasattr(event, 'breakpoints'):
+			break_hit = 1
 			run()
 		elif hasattr(event, 'inferior'):
-			global runable_after_exit
-			if not triggered:
-				global iter
-				global rec
-				if runable_after_exit:
-					res = run_shell_command()
-
-					if comparer(res):
-						check_trig_event()
-					elif rec <= iter + 1:
-						report_debug_failure()
-						finish_debug()
-				else: 
-					if rec <= iter + 1:
-						report_debug_failure()
-						finish_debug()
-			else:
+			if not break_hit:
+				gdb.write('error: Breakpoint wasn`t initialized.\n')
 				finish_debug()
+			else: 
+				break_hit = 0
+				global runable_after_exit
+				if not triggered:
+					global iter
+					global rec
+					if runable_after_exit:
+						res = run_shell_command()
+
+						if comparer(res):
+							check_trig_event()
+						elif rec <= iter + 1:
+							report_debug_failure()
+							finish_debug()
+					else: 
+						if rec <= iter + 1:
+							report_debug_failure()
+							finish_debug()
 		else:
 			run()
 
@@ -222,6 +228,7 @@ def subscribe():
 def check_if_true_on_start(res):
 	if comparer(res):
 			condition_satisfied()
+			finish_debug()
 			return DEBUG_ST.COMPLETED
 		
 	return subscribe()
@@ -279,8 +286,7 @@ def start_debug():
 		return subscribe()
 	else:
 		global arg_dict
-		gdb.write('{0}'.format(arg_dict.items()))
-		gdb.write('error: Some parameters aren`t specified.\n')
+		gdb.write('error: The event isn`t specified.\n\n')
 		print_usage()
 		return DEBUG_ST.COMPLETED
 
@@ -309,29 +315,36 @@ class DebugUntil (gdb.Command):
 		super(DebugUntil, self).__init__(CMD, gdb.COMMAND_USER)
 
 
+	def complete(self, text, word):
+		finish_debug()
+
+
 	def invoke(self, arg, from_tty):
 		if not arg:
-			print_usage()
+			print_full_info()
 			return
 				
 		args = gdb.string_to_argv(arg)
 		args_to_dictionary(args)
 
 		if has_arg(HELP):
-			print_usage()
-			return
-
-		if start_debug() == DEBUG_ST.COMPLETED:
+			print_full_info()
 			return
 
 		global rec
 		if has_arg(REC):
 			rec = int(get_arg_value(REC))
+			if rec <= 0:
+				finish_debug('invalid "-r" parameter.')
+				return
 		
+		if start_debug() == DEBUG_ST.COMPLETED:
+			return
+
 		global start_point
 		start_point = gdb.Breakpoint(args[0])
-		gdb.execute('set pagination off')
 
+		gdb.execute('set pagination off')
 		global iter
 		if not has_arg(ARGS):
 			for it in range(0, rec):

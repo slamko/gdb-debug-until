@@ -1,6 +1,6 @@
+from urllib.parse import non_hierarchical
 import gdb
 import os
-import sys
 from enum import Enum
 
 cmd = ''
@@ -8,8 +8,11 @@ exp = ''
 start_point = None
 triggered = 0
 subscribed = 0
+runable_after_exit = 1
 rec = 1
 iter = 0
+arg_dict = {}
+log_file = None
 
 LOG_FILE = 'log.txt'
 CMD = 'debug-until'
@@ -18,6 +21,8 @@ NEXT = 'next'
 CONTINUE = 'continue'
 RUN = 'run'
 LS_ERR = 'ls: cannot access'
+PRINT = 'print '
+SHELL = 'shell'
 
 HELP = '--help'
 ARGS = '--args'
@@ -25,26 +30,39 @@ EXP = '--exp'
 CMP = '--cmp'
 FILE_CREATED = '--file-created'
 FILE_DELETED = '--file-deleted'
+REC = '-r'
+VAR_EQ = '--var-eq'
+
+commands = []
+commands.append(HELP)
+commands.append(ARGS)
+commands.append(EXP)
+commands.append(CMP)
+commands.append(FILE_CREATED)
+commands.append(FILE_DELETED)
+commands.append(VAR_EQ)
+commands.append(REC)
 
 
-def get_arg_value(args, key):
-	arr = args.split('=')
+def get_arg_value(key):
+	arg = get_arg(key)
+	arr = arg.split('=')
 	if len(arr) == 2 and arr[1]:
 		return arr[1]
 	else:
-		key_arr = args.split(key)
+		key_arr = arg.split(key)
 		if not key_arr[1]:
 			finish_debug('"{0}" parameter wasn`t assinged.'.format(key))
 		else: 
 			return key_arr[1]
 
 
-class DB_STATUS(Enum):
+class DEBUG_ST(Enum):
 	COMPLETED = 0
 	RUNNING = 1
 
 
-def cmp_output(res):
+def cmp_command_output(res):
 	global exp
 	return exp == res or res.startswith(exp)
 
@@ -88,12 +106,15 @@ def print_usage():
 
 
 def run_shell_command():
-	if cmd.startswith('shell'):
-		shell_cmd = '{0} > {1} 2>&1'.format(cmd, LOG_FILE)
-		gdb.execute(shell_cmd, from_tty=True, to_string=True)
-		return open(LOG_FILE).read()
-	else:
-		return gdb.execute(cmd, from_tty=True, to_string=True)
+	try:
+		if cmd.startswith(SHELL):
+			shell_cmd = '{0} > {1} 2>&1'.format(cmd, LOG_FILE)
+			gdb.execute(shell_cmd, from_tty=True, to_string=True)
+			return open(LOG_FILE).read()
+		else:
+			return gdb.execute(cmd, from_tty=True, to_string=True)
+	except Exception:
+		pass
 	
 
 def condition_satisfied():
@@ -114,6 +135,9 @@ def dispose():
 	global rec
 	global iter
 	global comparer
+	global arg_dict
+	global runable_after_exit
+	global log_file 
 
 	if subscribed:
 		global handler
@@ -132,10 +156,13 @@ def dispose():
 	triggered = 0
 	rec = 1
 	iter = 0
+	runable_after_exit = 1
 	cmd = ''
 	exp = ''
 	start_point = None
-	comparer = cmp_output
+	log_file = None
+	arg_dict = {}
+	comparer = cmp_command_output
 
 
 def finish_debug(error_msg=None):
@@ -162,36 +189,46 @@ def run():
 
 
 def check_st(event):
-		if hasattr (event, 'breakpoints'):
+		if hasattr(event, 'breakpoints'):
 			run()
-		elif hasattr (event, 'inferior'):
+		elif hasattr(event, 'inferior'):
+			global runable_after_exit
 			if not triggered:
-				res = run_shell_command()
-
 				global iter
 				global rec
-				if comparer(res):
-					check_trig_event()
-				elif rec <= iter + 1:
-					report_debug_failure()
-					finish_debug()
+				if runable_after_exit:
+					res = run_shell_command()
+
+					if comparer(res):
+						check_trig_event()
+					elif rec <= iter + 1:
+						report_debug_failure()
+						finish_debug()
+				else: 
+					if rec <= iter + 1:
+						report_debug_failure()
+						finish_debug()
 			else:
 				finish_debug()
 		else:
 			run()
 
 
+def subscribe():
+	event_subscribe()
+	return DEBUG_ST.RUNNING
+
+
 def check_if_true_on_start(res):
 	if comparer(res):
 			condition_satisfied()
-			return DB_STATUS.COMPLETED
+			return DEBUG_ST.COMPLETED
 		
-	event_subscribe()
-	return DB_STATUS.RUNNING
+	return subscribe()
 	
 handler = check_st
 
-comparer = cmp_output
+comparer = cmp_command_output
 
 def event_subscribe():
 	global handler
@@ -201,47 +238,70 @@ def event_subscribe():
 	gdb.events.exited.connect(handler)
 
 
-def start_debug(args):
+def start_debug():
 	global cmd 
 	global exp
 	global comparer
-	args_len = len(args) 
 
-	if CMP in args[args_len - 2] and EXP in args[args_len - 1]:
-		cmd = get_arg_value(args[args_len - 2], CMP)
-		gdb.write(cmd)
-		exp = get_arg_value(args[args_len - 1], EXP)
-		gdb.write(exp)
+	if has_arg(CMP) and has_arg(EXP):
+		cmd = get_arg_value(CMP)
+		exp = get_arg_value(EXP)
 		res = run_shell_command()
+		comparer = cmp_command_output
 
 		return check_if_true_on_start(res)
-	elif FILE_CREATED in args[args_len - 1]:
-		target_file = get_arg_value(args[args_len - 1], FILE_CREATED)
-		cmd = 'shell ls ' + target_file
+	elif has_arg(FILE_CREATED):
+		target_file = get_arg_value(FILE_CREATED)
+		cmd = SHELL + ' ls ' + target_file
 		exp = target_file
 		res = run_shell_command()
+		comparer = cmp_command_output
 
 		return check_if_true_on_start(res)
-	elif FILE_DELETED in args[args_len - 1]:
-		target_file = get_arg_value(args[args_len - 1], FILE_DELETED)
-		cmd = 'shell ls ' + target_file
+	elif has_arg(FILE_DELETED):
+		target_file = get_arg_value(FILE_DELETED)
+		cmd =  SHELL + ' ls ' + target_file
 		exp = LS_ERR
 		res = run_shell_command()
+		comparer = cmp_command_output
 
 		return check_if_true_on_start(res)
-	elif '--var-eq' in args[args_len - 1]:
-		arg = get_arg_value(args[args_len - 1], '--var-eq')
+	elif has_arg(VAR_EQ):
+		arg = get_arg_value(VAR_EQ)
 		var = arg.split(':')[0]
 		val = arg.split(':')[1]
-		cmd = 'print ' + var
+		cmd = PRINT + var
 		exp = val
+		global runable_after_exit
+		runable_after_exit = 0
 		comparer = cmp_var
 
-		return check_if_true_on_start(' = ')
+		return subscribe()
 	else:
+		global arg_dict
+		gdb.write('{0}'.format(arg_dict.items()))
 		gdb.write('error: Some parameters aren`t specified.\n')
 		print_usage()
-		return DB_STATUS.COMPLETED
+		return DEBUG_ST.COMPLETED
+
+
+def get_arg(com):
+	global arg_dict
+	return arg_dict.get(com)
+
+
+def has_arg(com):
+	return get_arg(com) is not None
+
+
+def args_to_dictionary(args):
+	global arg_dict
+	global commands
+	for arg in args:
+		for com in commands:
+			if arg is not None and arg.startswith(com):
+				arg_dict.setdefault(com, arg)
+				break
 
 
 class DebugUntil (gdb.Command):
@@ -254,40 +314,40 @@ class DebugUntil (gdb.Command):
 			print_usage()
 			return
 				
-		gdb.execute('set pagination off')
 		args = gdb.string_to_argv(arg)
+		args_to_dictionary(args)
 
-		if HELP in args[0]:
+		if has_arg(HELP):
 			print_usage()
 			return
 
-		if start_debug(args) == DB_STATUS.COMPLETED:
+		if start_debug() == DEBUG_ST.COMPLETED:
 			return
 
 		global rec
-		if '-r' in args[2]:
-			rec = int(get_arg_value(args[2], '-r'))
+		if has_arg(REC):
+			rec = int(get_arg_value(REC))
 		
 		global start_point
 		start_point = gdb.Breakpoint(args[0])
+		gdb.execute('set pagination off')
 
 		global iter
-		if ARGS not in arg:
+		if not has_arg(ARGS):
 			for it in range(0, rec):
 				if get_triggered():
 					break
-				if it != rec:
-					iter = it
-					gdb.execute(RUN)
+
+				iter = it
+				gdb.execute(RUN)
 		else:
-			p_args = get_arg_value(args[1], ARGS)
+			p_args = get_arg_value(ARGS)
 			for it in range(0, rec):
-				
 				if get_triggered():
 					break
-				if it != rec:
-					iter = it
-					gdb.execute(RUN + ' ' + p_args)
+
+				iter = it
+				gdb.execute(RUN + ' ' + p_args)
 		finish_debug()
 
 DebugUntil()

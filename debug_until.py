@@ -5,12 +5,14 @@ from enum import Enum
 cmd = ''
 exp = ''
 start_point = None
+end_point = None
 triggered = 0
 break_hit = 0
 subscribed = 0
 runable_after_exit = 1
 rec = 1
 iter = 0
+observing_mode = 0
 arg_dict = {}
 
 LOG_FILE = 'log.txt'
@@ -31,6 +33,7 @@ FILE_CREATED = '--file-created'
 FILE_DELETED = '--file-deleted'
 REC = '-r'
 VAR_EQ = '--var-eq'
+END = '--end'
 
 commands = []
 commands.append(HELP)
@@ -41,6 +44,7 @@ commands.append(FILE_CREATED)
 commands.append(FILE_DELETED)
 commands.append(VAR_EQ)
 commands.append(REC)
+commands.append(END)
 
 
 def get_arg_value(key):
@@ -61,12 +65,19 @@ class DEBUG_ST(Enum):
 	RUNNING = 1
 
 
-def cmp_command_output(res):
+def check_file_exist():
+	global exp
+	return os.path.isfile(exp)
+
+
+def cmp_command_output():
+	res = run_shell_command()
 	global exp
 	return exp == res or res.startswith(exp)
 
 
-def cmp_var(res):
+def cmp_var():
+	res = run_shell_command()
 	res_val = res.split('=')[1].strip().strip()
 	global exp
 	return exp == res_val
@@ -142,6 +153,8 @@ def dispose():
 	global arg_dict
 	global runable_after_exit
 	global break_hit
+	global end_point
+	global observing_mode
 
 	if subscribed:
 		global handler
@@ -152,6 +165,9 @@ def dispose():
 	if start_point != None:
 		start_point.delete()
 
+	if end_point != None:
+		end_point.delete()
+
 	if os.path.isfile(LOG_FILE):
 		gdb.execute('shell rm ' + LOG_FILE)
 		
@@ -161,10 +177,12 @@ def dispose():
 	rec = 1
 	iter = 0
 	break_hit = 0
+	observing_mode = 0
 	runable_after_exit = 1
 	cmd = ''
 	exp = ''
 	start_point = None
+	end_point = None
 	arg_dict = {}
 	comparer = cmp_command_output
 
@@ -174,7 +192,7 @@ def finish_debug(error_msg=None):
 	die(error_msg)
 
 
-def check_trig_event():
+def try_trig_event():
 	global triggered
 	if not triggered: 
 		event_triggered()
@@ -184,17 +202,27 @@ def check_trig_event():
 
 
 def run():
-	res = run_shell_command()
-	if comparer(res):
-		check_trig_event()
+	if comparer():
+		try_trig_event()
 	else:
 		gdb.execute(NEXT)
+
+
+def finish():
+	global observing_mode
+	if not observing_mode:
+		report_debug_failure()
+	finish_debug()
 
 
 def check_st(event):
 		global break_hit
 		if hasattr(event, 'breakpoints'):
 			break_hit = 1
+			if end_point != None:
+				if event.breakpoints[0].location == end_point.location:
+					gdb.execute(CONTINUE)
+					return
 			run()
 		elif hasattr(event, 'inferior'):
 			if not break_hit:
@@ -207,17 +235,13 @@ def check_st(event):
 					global iter
 					global rec
 					if runable_after_exit:
-						res = run_shell_command()
-
-						if comparer(res):
-							check_trig_event()
+						if comparer():
+							try_trig_event()
 						elif rec <= iter + 1:
-							report_debug_failure()
-							finish_debug()
+							finish()
 					else: 
 						if rec <= iter + 1:
-							report_debug_failure()
-							finish_debug()
+							finish()
 		else:
 			run()
 
@@ -227,8 +251,8 @@ def subscribe():
 	return DEBUG_ST.RUNNING
 
 
-def check_if_true_on_start(res):
-	if comparer(res):
+def check_if_true_on_start():
+	if comparer():
 			condition_satisfied()
 			finish_debug()
 			return DEBUG_ST.COMPLETED
@@ -255,26 +279,21 @@ def start_debug():
 	if has_arg(CMP) and has_arg(EXP):
 		cmd = get_arg_value(CMP)
 		exp = get_arg_value(EXP)
-		res = run_shell_command()
 		comparer = cmp_command_output
 
-		return check_if_true_on_start(res)
+		return check_if_true_on_start()
 	elif has_arg(FILE_CREATED):
 		target_file = get_arg_value(FILE_CREATED)
-		cmd = SHELL + ' ls ' + target_file
 		exp = target_file
-		res = run_shell_command()
-		comparer = cmp_command_output
+		comparer = check_file_exist
 
-		return check_if_true_on_start(res)
+		return check_if_true_on_start()
 	elif has_arg(FILE_DELETED):
 		target_file = get_arg_value(FILE_DELETED)
-		cmd =  SHELL + ' ls ' + target_file
 		exp = LS_ERR
-		res = run_shell_command()
-		comparer = cmp_command_output
+		comparer = lambda : not check_file_exist()
 
-		return check_if_true_on_start(res)
+		return check_if_true_on_start()
 	elif has_arg(VAR_EQ):
 		arg = get_arg_value(VAR_EQ)
 		var = arg.split(':')[0]
@@ -286,8 +305,16 @@ def start_debug():
 		comparer = cmp_var
 
 		return subscribe()
+	elif has_arg(END):
+		end_p = get_arg_value(END)
+		global end_point
+		end_point = gdb.Breakpoint(end_p)
+		global observing_mode
+		observing_mode = 1
+		comparer = lambda : False
+
+		return subscribe()
 	else:
-		global arg_dict
 		gdb.write('error: The event isn`t specified.\n\n')
 		print_usage()
 		return DEBUG_ST.COMPLETED
@@ -341,6 +368,7 @@ class DebugUntil (gdb.Command):
 				return
 		
 		if start_debug() == DEBUG_ST.COMPLETED:
+			finish_debug()
 			return
 
 		global start_point

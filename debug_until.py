@@ -90,9 +90,11 @@ def report_debug_failure():
 
 def print_usage():
 	gdb.write('Usage:\n')
-	gdb.write('debug-until [<starting breakpoint>] [--args=<inferior args>] [[--cmp=<shell command> --exp=<expected output>]\n')
+	gdb.write('debug-until [<starting breakpoint>] [--args=<inferior args>] [-r=<number of times program should be executed>] \n')
+	gdb.write('                                                             [[--cmp=<shell command> --exp=<expected output>]\n')
 	gdb.write('                                                              [--file-created=<file>]\n')
-	gdb.write('                                                              [--file-deleted=<file>]\n\n')
+	gdb.write('                                                              [--file-deleted=<file>]\n')
+	gdb.write('                                                              [--var-eq=<variable>:<expected value>]]\n\n')
 	gdb.write('[starting break point] - should be passed in the format that is accepted by GDB\
 (e.g. <filename>:<line> or <function name>).\n')
 	gdb.write('[inferior args] - arguments for GDB`s run command required run debugged program.\n')

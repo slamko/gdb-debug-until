@@ -2,23 +2,11 @@ import gdb
 import os
 from enum import Enum
 
-cmd = ''
-exp = ''
-start_point = None
-end_point = None
-triggered = 0
-break_hit = 0
-subscribed = 0
-runable_after_exit = 1
-rec = 1
-iter = 0
-observing_mode = 0
-arg_dict = {}
-
 LOG_FILE = 'log.txt'
 CMD = 'debug-until'
 
 NEXT = 'next'
+STEP = 'step'
 CONTINUE = 'continue'
 RUN = 'run'
 LS_ERR = 'ls: cannot access'
@@ -31,21 +19,26 @@ EXP = '--exp'
 CMP = '--cmp'
 FILE_CREATED = '--file-created'
 FILE_DELETED = '--file-deleted'
+STEP_IN = '--step-in'
 REC = '-r'
 VAR_EQ = '--var-eq'
 END = '--end'
 
-commands = []
-commands.append(HELP)
-commands.append(ARGS)
-commands.append(EXP)
-commands.append(CMP)
-commands.append(FILE_CREATED)
-commands.append(FILE_DELETED)
-commands.append(VAR_EQ)
-commands.append(REC)
-commands.append(END)
+cmd = ''
+exp = ''
+start_point = None
+end_point = None
+triggered = 0
+break_hit = 0
+subscribed = 0
+runable_after_exit = 1
+rec = 1
+iter = 0
+observing_mode = 0
+arg_dict = {}
+step = NEXT
 
+commands = [HELP, ARGS, EXP, CMP, FILE_CREATED, FILE_DELETED, REC, VAR_EQ, END, STEP_IN]
 
 def get_arg_value(key):
 	arg = get_arg(key)
@@ -78,14 +71,23 @@ def cmp_command_output():
 
 def cmp_var():
 	res = run_shell_command()
-	res_val = res.split('=')[1].strip().strip()
-	global exp
-	return exp == res_val
+	if res == None:
+		warning("No such symbol in this current context")
+		return False
+	else:
+		res_val = res.split('=')[1].strip().strip()
+		global exp
+		return exp == res_val
 
 
 def die(error):
 	if error:
 		raise gdb.GdbError('error: ' + error)
+
+
+def warning(warn):
+	if warn:
+		gdb.write("warning: {}!\n".format(warn))
 
 
 def event_triggered():
@@ -101,8 +103,8 @@ def report_debug_failure():
 
 def print_usage():
 	gdb.write('Usage:\n')
-	gdb.write('debug-until [<starting breakpoint>] [--args=<inferior args>] [-r=<number of times program should be executed>] \n')
-	gdb.write('                                                             [[--cmp=<shell command> --exp=<expected output>]\n')
+	gdb.write('debug-until [<starting breakpoint>] [--args=<inferior args>] [<--step-in>]\n')
+	gdb.write(' 		  [-r=<number of times program should be executed>] [[--cmp=<shell command> --exp=<expected output>]\n')
 	gdb.write('                                                              [--file-created=<file>]\n')
 	gdb.write('                                                              [--file-deleted=<file>]\n')
 	gdb.write('                                                              [--var-eq=<variable>:<expected value>]]\n\n')
@@ -155,6 +157,7 @@ def dispose():
 	global break_hit
 	global end_point
 	global observing_mode
+	global step
 
 	if subscribed:
 		global handler
@@ -184,6 +187,7 @@ def dispose():
 	start_point = None
 	end_point = None
 	arg_dict = {}
+	step = NEXT
 	comparer = cmp_command_output
 
 
@@ -197,7 +201,7 @@ def try_trig_event():
 	if not triggered: 
 		event_triggered()
 		triggered = 1
-		gdb.execute(NEXT)
+		gdb.execute(step)
 		gdb.execute(CONTINUE)
 
 
@@ -205,7 +209,7 @@ def run():
 	if comparer():
 		try_trig_event()
 	else:
-		gdb.execute(NEXT)
+		gdb.execute(step)
 
 
 def finish():
@@ -224,7 +228,7 @@ def check_st(event):
 					gdb.execute(CONTINUE)
 					return
 			run()
-		elif hasattr(event, 'inferior'):
+		elif hasattr(event, 'exit_code'):
 			if not break_hit:
 				gdb.write('error: Breakpoint wasn`t initialized.\n')
 				finish_debug()
@@ -370,6 +374,10 @@ class DebugUntil (gdb.Command):
 		if start_debug() == DEBUG_ST.COMPLETED:
 			finish_debug()
 			return
+
+		if has_arg(STEP_IN):
+			global step
+			step = STEP
 
 		global start_point
 		start_point = gdb.Breakpoint(args[0])

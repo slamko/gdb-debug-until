@@ -1,3 +1,6 @@
+from opcode import hasfree
+
+from attr import has
 import gdb
 import os
 from enum import Enum
@@ -23,6 +26,8 @@ STEP_IN = '--step-in'
 REC = '-r'
 VAR_EQ = '--var-eq'
 END = '--end'
+BY_INSTRUCTION = '-i'
+START_POINT = 's'
 
 cmd = ''
 exp = ''
@@ -38,7 +43,8 @@ observing_mode = 0
 arg_dict = {}
 step = NEXT
 
-commands = [HELP, ARGS, EXP, CMP, FILE_CREATED, FILE_DELETED, REC, VAR_EQ, END, STEP_IN]
+commands = [HELP, ARGS, EXP, CMP, FILE_CREATED, FILE_DELETED, 
+			REC, VAR_EQ, END, STEP_IN, BY_INSTRUCTION]
 
 def get_arg_value(key):
 	arg = get_arg(key)
@@ -104,17 +110,23 @@ def report_debug_failure():
 def print_usage():
 	gdb.write('Usage:\n')
 	gdb.write('debug-until [<starting breakpoint>] [--args=<inferior args>] [<--step-in>]\n')
-	gdb.write(' 		  [-r=<number of times program should be executed>] [[--cmp=<shell command> --exp=<expected output>]\n')
-	gdb.write('                                                              [--file-created=<file>]\n')
-	gdb.write('                                                              [--file-deleted=<file>]\n')
-	gdb.write('                                                              [--var-eq=<variable>:<expected value>]]\n\n')
+	gdb.write(' 		  [-r=<number of times program should be executed>] [<-i>]\n')
+	gdb.write('                                             [[--cmp=<shell command> --exp=<expected output>]\n')
+	gdb.write('                                              [--file-created=<file>]\n')
+	gdb.write('                                              [--file-deleted=<file>]\n')
+	gdb.write('                                              [--var-eq=<variable>:<expected value>]]\n\n')
+	gdb.write('                                              [--end=<ending breakpoint>]\n\n')
 	gdb.write('[starting break point] - should be passed in the format that is accepted by GDB\
 (e.g. <filename>:<line> or <function name>).\n')
 	gdb.write('[inferior args] - arguments for GDB`s run command required run debugged program.\n')
 	gdb.write('[shell command] - the shell command that will be executed after each line of code.\n')
 	gdb.write('The output of the <shell command> will be compared with <expected output>\
 and in case if they are equal debug-until will report about triggering of an event.\n')
+	gdb.write('[<--step-in>] - by default debug-until uses the GDB`s next command to iterate \
+through your code. Add this option to switch from next to step command\n')
+	gdb.write('[<-i>] - iterate through assembly code by instruction.\n')
 	gdb.write('\nGet more info on https://github.com/Viaceslavus/gdb-debug-until\n')
+
 
 
 def print_full_info():
@@ -280,6 +292,11 @@ def start_debug():
 	global exp
 	global comparer
 
+	if has_arg(END):
+		end_p = get_arg_value(END)
+		global end_point
+		end_point = gdb.Breakpoint(end_p)
+
 	if has_arg(CMP) and has_arg(EXP):
 		cmd = get_arg_value(CMP)
 		exp = get_arg_value(EXP)
@@ -309,19 +326,17 @@ def start_debug():
 		comparer = cmp_var
 
 		return subscribe()
-	elif has_arg(END):
-		end_p = get_arg_value(END)
-		global end_point
-		end_point = gdb.Breakpoint(end_p)
-		global observing_mode
-		observing_mode = 1
-		comparer = lambda : False
-
-		return subscribe()
 	else:
-		gdb.write('error: The event isn`t specified.\n\n')
-		print_usage()
-		return DEBUG_ST.COMPLETED
+		if has_arg(END):
+			global observing_mode
+			observing_mode = 1
+			comparer = lambda : False
+
+			return subscribe()
+		else:
+			gdb.write('error: The event isn`t specified.\n\n')
+			print_usage()
+			return DEBUG_ST.COMPLETED
 
 
 def get_arg(com):
@@ -333,14 +348,25 @@ def has_arg(com):
 	return get_arg(com) is not None
 
 
-def args_to_dictionary(args):
+def parse_args(cli_arg):
+	args = gdb.string_to_argv(cli_arg)
 	global arg_dict
+	arg_dict.setdefault(START_POINT, args[0])
 	global commands
 	for arg in args:
 		for com in commands:
 			if arg is not None and arg.startswith(com):
 				arg_dict.setdefault(com, arg)
 				break
+
+
+def configure_step_command():
+	global step
+	if has_arg(STEP_IN):
+		step = STEP
+	
+	if has_arg(BY_INSTRUCTION):
+		step += 'i'
 
 
 class DebugUntil (gdb.Command):
@@ -357,8 +383,7 @@ class DebugUntil (gdb.Command):
 			print_full_info()
 			return
 				
-		args = gdb.string_to_argv(arg)
-		args_to_dictionary(args)
+		parse_args(arg)
 
 		if has_arg(HELP):
 			print_full_info()
@@ -375,12 +400,10 @@ class DebugUntil (gdb.Command):
 			finish_debug()
 			return
 
-		if has_arg(STEP_IN):
-			global step
-			step = STEP
-
 		global start_point
-		start_point = gdb.Breakpoint(args[0])
+		start_point = gdb.Breakpoint(get_arg(START_POINT))
+
+		configure_step_command()
 
 		gdb.execute('set pagination off')
 		global iter

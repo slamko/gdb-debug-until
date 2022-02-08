@@ -31,6 +31,7 @@ debug-until [<starting breakpoint>] [--args=<inferior args>] [<--step-in>]
                  [--file-created=<file>]
                  [--file-deleted=<file>]
                  [--var-eq=<variable>:<expected value>]]
+                [--end=<ending breakpoint>]
 ```
 
 ### Some usage remarks:
@@ -55,3 +56,5 @@ debug-until main --args="" --var-eq="my_var:10"
 inside GDB.
 
 So, the command above will create a breakpoint in 'main' function, run the inferior program without arguments and wait until the variable, called 'my_var', will contain value 10. 'Debug-until' will iterate through each line of your code and report to you, when the condition will return true. 
+
+Some more examples can be found at [examples.md](https://github.com/Viaceslavus/gdb-debug-until/blob/master/examples.md)

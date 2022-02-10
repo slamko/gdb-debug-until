@@ -26,12 +26,17 @@ specifying the correct path to the python script.
 
 ```
 debug-until [<starting breakpoint>] [--args=<inferior args>] [<--step-in>]
-            [-r=<number of times program should be executed>] 
+            [-r=<number of times program should be executed>] [<-i>]
                 [[--cmp=<shell command> --exp=<expected output>]
                  [--file-created=<file>]
                  [--file-deleted=<file>]
                  [--var-eq=<variable>:<expected value>]]
                 [--end=<ending breakpoint>]
+                
+                
+           --step-in   step into the function while debugging
+           
+           -i          by-instruction debugging.
 ```
 
 ### Some usage remarks:
@@ -42,8 +47,6 @@ debug-until [<starting breakpoint>] [--args=<inferior args>] [<--step-in>]
 
 ***[shell command]*** - the shell command that will be executed after each line of code.  
 The output of the shell command will be compared with *expected output* and in case if they are equal ```debug-until``` will report about triggering of an event.
-
-***[<--step-in>]*** - by default ```debug-until``` uses the GDB's ```next``` command to iterate through your code. Add this option to switch from ```next``` to ```step``` command.
 
 ##### * run ```debug-until --help``` to get usage info in the terminal.
 

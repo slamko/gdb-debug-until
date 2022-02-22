@@ -1,6 +1,3 @@
-from opcode import hasfree
-
-from attr import has
 import gdb
 import os
 from enum import Enum

@@ -3,7 +3,7 @@
 ---
 
 ## The idea
-In programming it is common task to debug someone other's code, and it could be quite complicated to catch the moment, when something goes wrong, by looking through the code that you don't understand, especially if there are no comments. It is not the best experience in programming... So this little extension with a couple of pyhton scripts and embedded Python interpretor in GDB may enhance your debugging experience. The idea is to specify the behaviour that, as you expect, will be triggered during the program is running, and ```debug-until``` will run through the code, until the specified event will be triggered, so a pretty-formatted message will be printed on the screen.
+It is common task to debug someone other's code, and it could be quite complicated to catch the moment, when something goes wrong, by looking through the code that you don't understand, especially if there are no comments. So this little extension with a couple of pyhton scripts and embedded Python interpretor in GDB may enhance your debugging experience. The idea is to specify the behaviour that, as you expect, will be triggered during the program is running, and ```debug-until``` will run through the code, until the specified event will be triggered, so a pretty-formatted message will be printed on the screen.
 
 </br>
 

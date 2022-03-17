@@ -5,6 +5,7 @@ from enum import Enum
 LOG_FILE = 'log.txt'
 CMD = 'debug-until'
 
+#local keywords
 NEXT = 'next'
 STEP = 'step'
 CONTINUE = 'continue'
@@ -13,17 +14,18 @@ LS_ERR = 'ls: cannot access'
 PRINT = 'print '
 SHELL = 'shell'
 
-HELP = '--help'
-ARGS = '--args'
-EXP = '--exp'
-CMP = '--cmp'
-FILE_CREATED = '--file-created'
-FILE_DELETED = '--file-deleted'
-STEP_IN = '--step-in'
-REC = '-r'
-VAR_EQ = '--var-eq'
-END = '--end'
-BY_INSTRUCTION = '-i'
+#args
+HELP = ['--help', '-h']
+ARGS = ['--args', '-a']
+EXP = ['--exp', '-E']
+CMP = ['--cmp', '-C']
+FILE_CREATED = ['--file-created', '-F']
+FILE_DELETED = ['--file-deleted', '-D']
+STEP_IN = ['--step-in', '-s']
+REC = ['--rec', '-r']
+VAR_EQ = ['--var-eq', '-v']
+END = ['--end', '-e']
+BY_INSTRUCTION = ['--by-inst', '-i']
 START_POINT = 's'
 
 cmd = ''
@@ -42,6 +44,28 @@ step = NEXT
 
 commands = [HELP, ARGS, EXP, CMP, FILE_CREATED, FILE_DELETED, 
 			REC, VAR_EQ, END, STEP_IN, BY_INSTRUCTION]
+
+
+def print_usage():
+	gdb.write('Usage:\n')
+	gdb.write('debug-until [<starting breakpoint>] [--args=<inferior args>] [<--step-in>]\n')
+	gdb.write(' 		  [-r=<number of times program should be executed>] [<-i>]\n')
+	gdb.write('                                             [[--cmp=<shell command> --exp=<expected output>]\n')
+	gdb.write('                                              [--file-created=<file>]\n')
+	gdb.write('                                              [--file-deleted=<file>]\n')
+	gdb.write('                                              [--var-eq=<variable>:<expected value>]]\n\n')
+	gdb.write('                                              [--end=<ending breakpoint>]\n\n')
+	gdb.write('[starting break point] - should be passed in the format that is accepted by GDB\
+(e.g. <filename>:<line> or <function name>).\n')
+	gdb.write('[inferior args] - arguments for GDB`s run command required run debugged program.\n')
+	gdb.write('[shell command] - the shell command that will be executed after each line of code.\n')
+	gdb.write('The output of the <shell command> will be compared with <expected output>\
+and in case if they are equal debug-until will report about triggering of an event.\n')
+	gdb.write('[<--step-in>] - by default debug-until uses the GDB`s next command to iterate \
+through your code. Add this option to switch from next to step command\n')
+	gdb.write('[<-i>] - iterate through assembly code by instruction.\n')
+	gdb.write('\nGet more info on https://github.com/Viaceslavus/gdb-debug-until\n')
+
 
 def get_arg_value(key):
 	arg = get_arg(key)
@@ -104,32 +128,12 @@ def report_debug_failure():
 	gdb.write('Passed condition wasn`t met. Try setting different parameters\n')
 	gdb.write('-------------------------------------------------------------\n \n')
 
-def print_usage():
-	gdb.write('Usage:\n')
-	gdb.write('debug-until [<starting breakpoint>] [--args=<inferior args>] [<--step-in>]\n')
-	gdb.write(' 		  [-r=<number of times program should be executed>] [<-i>]\n')
-	gdb.write('                                             [[--cmp=<shell command> --exp=<expected output>]\n')
-	gdb.write('                                              [--file-created=<file>]\n')
-	gdb.write('                                              [--file-deleted=<file>]\n')
-	gdb.write('                                              [--var-eq=<variable>:<expected value>]]\n\n')
-	gdb.write('                                              [--end=<ending breakpoint>]\n\n')
-	gdb.write('[starting break point] - should be passed in the format that is accepted by GDB\
-(e.g. <filename>:<line> or <function name>).\n')
-	gdb.write('[inferior args] - arguments for GDB`s run command required run debugged program.\n')
-	gdb.write('[shell command] - the shell command that will be executed after each line of code.\n')
-	gdb.write('The output of the <shell command> will be compared with <expected output>\
-and in case if they are equal debug-until will report about triggering of an event.\n')
-	gdb.write('[<--step-in>] - by default debug-until uses the GDB`s next command to iterate \
-through your code. Add this option to switch from next to step command\n')
-	gdb.write('[<-i>] - iterate through assembly code by instruction.\n')
-	gdb.write('\nGet more info on https://github.com/Viaceslavus/gdb-debug-until\n')
-
-
 
 def print_full_info():
 	gdb.write('\Decription:\n')
 	gdb.write('\nDebug through the code until the passed event will be triggered.\n\n')
 	print_usage()
+
 
 def run_shell_command():
 	try:
@@ -337,12 +341,18 @@ def start_debug():
 
 
 def get_arg(com):
-	global arg_dict
-	return arg_dict.get(com)
+	fisr_key_arg=arg_dict.get(com[0])
+	if len(com) == 1:
+		return fisr_key_arg
+	else:
+		if fisr_key_arg is not None:
+			return fisr_key_arg
+		else:
+			return arg_dict.get(com[1])
 
 
-def has_arg(com):
-	return get_arg(com) is not None
+def has_arg(com_id):
+	return get_arg(com_id) is not None
 
 
 def parse_args(cli_arg):
@@ -352,9 +362,13 @@ def parse_args(cli_arg):
 	global commands
 	for arg in args:
 		for com in commands:
-			if arg is not None and arg.startswith(com):
-				arg_dict.setdefault(com, arg)
-				break
+			if arg is not None and arg.startswith(com[0]):
+					arg_dict.setdefault(com[0], arg)
+					break
+			if len(com) > 1:
+				if arg is not None and arg.startswith(com[1]):
+					arg_dict.setdefault(com[1], arg)
+					break
 
 
 def configure_step_command():

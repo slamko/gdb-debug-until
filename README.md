@@ -25,28 +25,31 @@ specifying the correct path to the python script.
 ## Usage: 
 
 ```
-debug-until [<starting breakpoint>] [--args=<inferior args>] [<--step-in>]
-            [-r=<number of times program should be executed>] [<-i>]
-                [[--cmp=<shell command> --exp=<expected output>]
-                 [--file-created=<file>]
-                 [--file-deleted=<file>]
-                 [--var-eq=<variable>:<expected value>]]
-                [--end=<ending breakpoint>]
-                
-                
-           --step-in   step into the function while debugging
-           
-           -i          by-instruction debugging.
+  debug-until <starting breakpoint> [options] [event]
+
+  <starting breakpoint> - should be passed in the format that is accepted by GDB
+  (e.g. <filename>:<line> or <function name>)
+
+ Options:
+        --args=<inferior args> : arguments to be passed to GDB`s "run" command
+        --step-in              : by default debug-until uses the GDB`s "next" command
+                                 to iterate through your code.
+                                 Add this option to switch from "next" to "step" command
+
+        -r=<num>               : number of times the program should be executed
+        -i                     : iterate through assembly code by instruction.
+
+ Events
+        --cmp=<shell command> && --exp=<expected output> (Should be used together)
+                : <shell command> - the shell command that will be executed after each line of code
+                  The output of the <shell command> will be compared with an <expected output>
+
+        --file-created=<file>  : run until the specified file created
+        --file-deleted=<file>  : run until the specified file created
+        --var-eq=<var>:<val>   : run until the value of variable <var> equals <val>
+        --end=<end breakpoint> : run until end brakpoint
+
 ```
-
-### Some usage remarks:
-
-***[starting breakpoint]*** - should be passed in the format that is accepted by GDB (e.g. ```<filename>:<line>``` or ```<function name>```).  
-
-***[inferior args]*** - arguments for GDB's ```run``` command required run debugged program.  
-
-***[shell command]*** - the shell command that will be executed after each line of code.  
-The output of the shell command will be compared with *expected output* and in case if they are equal ```debug-until``` will report about triggering of an event.
 
 ##### * run ```debug-until --help``` to get usage info in the terminal.
 

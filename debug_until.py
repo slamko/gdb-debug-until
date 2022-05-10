@@ -1,3 +1,4 @@
+from this import d
 import gdb
 import os
 from enum import Enum
@@ -47,24 +48,26 @@ commands = [HELP, ARGS, EXP, CMP, FILE_CREATED, FILE_DELETED,
 
 
 def print_usage():
-	gdb.write('Usage:\n')
-	gdb.write('debug-until [<starting breakpoint>] [--args=<inferior args>] [<--step-in>]\n')
-	gdb.write(' 		  [-r=<number of times program should be executed>] [<-i>]\n')
-	gdb.write('                                             [[--cmp=<shell command> --exp=<expected output>]\n')
-	gdb.write('                                              [--file-created=<file>]\n')
-	gdb.write('                                              [--file-deleted=<file>]\n')
-	gdb.write('                                              [--var-eq=<variable>:<expected value>]]\n\n')
-	gdb.write('                                              [--end=<ending breakpoint>]\n\n')
-	gdb.write('[starting break point] - should be passed in the format that is accepted by GDB\
-(e.g. <filename>:<line> or <function name>).\n')
-	gdb.write('[inferior args] - arguments for GDB`s run command required run debugged program.\n')
-	gdb.write('[shell command] - the shell command that will be executed after each line of code.\n')
-	gdb.write('The output of the <shell command> will be compared with <expected output>\
-and in case if they are equal debug-until will report about triggering of an event.\n')
-	gdb.write('[<--step-in>] - by default debug-until uses the GDB`s next command to iterate \
-through your code. Add this option to switch from next to step command\n')
-	gdb.write('[<-i>] - iterate through assembly code by instruction.\n')
-	gdb.write('\nGet more info on https://github.com/Viaceslavus/gdb-debug-until\n')
+	gdb.write(
+			'Usage:\n'
+			'debug-until <starting breakpoint>' 
+			'[--args=<inferior args>] [<--step-in>]\n'
+			' 		  [-r=<number of times program should be executed>] [<-i>]\n'
+			'                                             [[--cmp=<shell command> --exp=<expected output>]\n'
+			'                                              [--file-created=<file>]\n'
+			'                                              [--file-deleted=<file>]\n'
+			'                                              [--var-eq=<variable>:<expected value>]]\n\n'
+			'                                              [--end=<ending breakpoint>]\n\n'
+			'[starting break point] - should be passed in the format that is accepted by GDB\
+(e.g. <filename>:<line> or <function name>).\n'
+	'[inferior args] - arguments for GDB`s run command required run debugged program.\n'
+	'[shell command] - the shell command that will be executed after each line of code.\n'
+	'The output of the <shell command> will be compared with <expected output>\
+and in case if they are equal debug-until will report about triggering of an event.\n'
+	'[<--step-in>] - by default debug-until uses the GDB`s next command to iterate \
+through your code. Add this option to switch from next to step command\n'
+	'[<-i>] - iterate through assembly code by instruction.\n'
+	'\nGet more info on https://github.com/Viaceslavus/gdb-debug-until\n')
 
 
 def get_arg_value(key):
@@ -125,7 +128,7 @@ def event_triggered():
 
 def report_debug_failure():
 	gdb.write('\n-------------------------------------------------------------\n')
-	gdb.write('Passed condition wasn`t met. Try setting different parameters\n')
+	gdb.write('Passed condition wasn`t met. Try different arguments\n')
 	gdb.write('-------------------------------------------------------------\n \n')
 
 
@@ -288,6 +291,11 @@ def event_subscribe():
 	gdb.events.exited.connect(handler)
 
 
+def log_debug_started(msg):
+	gdb.write('\n-------------------------------------------------------------\n')
+	gdb.write('{0}\n'.format(msg))
+	gdb.write('-------------------------------------------------------------\n\n')
+
 def start_debug():
 	global cmd 
 	global exp
@@ -297,23 +305,27 @@ def start_debug():
 		end_p = get_arg_value(END)
 		global end_point
 		end_point = gdb.Breakpoint(end_p)
+		log_debug_started('Running until the end breakpoint')
 
 	if has_arg(CMP) and has_arg(EXP):
 		cmd = get_arg_value(CMP)
 		exp = get_arg_value(EXP)
 		comparer = cmp_command_output
+		log_debug_started('Running until shell command output "{0}" equals "{1}"'.format(cmd, exp))
 
 		return check_if_true_on_start()
 	elif has_arg(FILE_CREATED):
 		target_file = get_arg_value(FILE_CREATED)
 		exp = target_file
 		comparer = check_file_exist
+		log_debug_started('Running until file "{0}" will be created'.format(target_file))
 
 		return check_if_true_on_start()
 	elif has_arg(FILE_DELETED):
 		target_file = get_arg_value(FILE_DELETED)
 		exp = LS_ERR
 		comparer = lambda : not check_file_exist()
+		log_debug_started('Running until file "{0}" will be deleted'.format(target_file))
 
 		return check_if_true_on_start()
 	elif has_arg(VAR_EQ):
@@ -325,19 +337,16 @@ def start_debug():
 		global runable_after_exit
 		runable_after_exit = 0
 		comparer = cmp_var
+		log_debug_started('Running until variable "{0}" equals "{1}"'.format(var, val))
 
 		return subscribe()
 	else:
-		if has_arg(END):
-			global observing_mode
-			observing_mode = 1
-			comparer = lambda : False
+		global observing_mode
+		observing_mode = 1
+		comparer = lambda : False
+		log_debug_started('Running in observing mode')
 
-			return subscribe()
-		else:
-			gdb.write('error: The event isn`t specified.\n\n')
-			print_usage()
-			return DEBUG_ST.COMPLETED
+		return subscribe()
 
 
 def get_arg(com):
